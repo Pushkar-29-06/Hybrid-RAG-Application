@@ -290,6 +290,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## Acknowledgments
 
-Built following the comprehensive Hindi tutorial on building advanced RAG pipelines, combining best practices from the retrieval-augmented generation community.
