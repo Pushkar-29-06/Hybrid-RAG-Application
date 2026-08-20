@@ -23,44 +23,56 @@ The project addresses the limitation of single-method retrieval systems by combi
 
 ```mermaid
 graph TD
-    A[User] -->|Upload Text/File| B[FastAPI Backend]
-    B --> C[Text Chunker]
-    C --> D[Document Store]
-    D --> E[BM25 Index Builder]
-    D --> F[FAISS Index Builder]
-    E --> G[Sparse Search BM25]
-    F --> H[Dense Search FAISS]
-    G --> I[Hybrid Search Combiner]
-    H --> I
-    I --> J[Cross-Encoder Reranker]
-    J --> K[Context Builder]
-    K --> L[Ollama LLM]
-    L --> M[Response]
-    M --> A
+    subgraph "Phase 1: Data Indexing & Preparation"
+        A[Uploaded Documents] --> B[Chunk-Based Processing]
+        B --> C[Dual Indexing]
+        C --> D[BM25 Tokenization]
+        C --> E[Vector Embeddings all-MiniLM-L6-v2]
+        D --> F[BM25 Sparse Index]
+        E --> G[FAISS Semantic Index]
+    end
+    
+    subgraph "Phase 2: Retrieval & Response Generation"
+        H[User Query] --> I[Hybrid Search]
+        F --> I
+        G --> I
+        I --> J[BM25 Results]
+        I --> K[FAISS Results]
+        J --> L[Cross-Encoder Reranking]
+        K --> L
+        L --> M[Top-K Relevant Chunks]
+        M --> N[Contextual Prompting]
+        N --> O[Local LLM Ollama]
+        O --> P[AI Answer Synthesis]
+    end
 ```
 
 ## How It Works
 
-### Document Ingestion Pipeline
+### Phase 1: Data Indexing & Preparation
 
-1. **Upload**: User submits text or a text file via the `/upload` endpoint
-2. **Chunking**: The text is divided into smaller chunks (default 500 characters) with 100-character overlap to preserve context across boundaries
-3. **Indexing**: 
-   - Chunks are tokenized and indexed using BM25 for keyword search
-   - Chunks are converted to 384-dimensional embeddings using `all-MiniLM-L6-v2` and stored in a FAISS index
-4. **Storage**: Chunks are stored in memory for retrieval
+1. **Uploaded Documents**: Documents are initially uploaded via the `/upload` endpoint, either as raw text or text files
 
-### Query Processing Pipeline
+2. **Chunk-Based Processing**: The uploaded text is split into smaller chunks (500 characters with 100-character overlap) to improve retrieval precision and maintain context relevance across chunk boundaries
 
-1. **Query Reception**: User submits a question via the `/rag/search` endpoint
-2. **Hybrid Search**: 
-   - BM25 retrieves top chunks based on keyword matching
-   - FAISS retrieves top chunks based on semantic similarity
-   - Results are combined and deduplicated
-3. **Reranking**: Cross-encoder model scores each query-document pair to identify the most relevant chunks
-4. **Context Construction**: Top-ranked chunks are formatted into a context string
-5. **LLM Generation**: The context and query are sent to a local LLM (via Ollama) to generate the final answer
-6. **Response**: The answer along with the used context is returned to the user
+3. **Dual Indexing (Sparse & Dense)**:
+   - **BM25 Sparse Index**: Documents are tokenized and indexed for keyword-based search using the BM25 algorithm
+   - **FAISS Dense Index**: Documents are converted into 384-dimensional vector embeddings using the pre-trained `all-MiniLM-L6-v2` model, which transforms text into numerical vectors for semantic search
+   - These embeddings are stored in a FAISS index for efficient similarity search
+
+### Phase 2: Retrieval & Response Generation
+
+1. **Hybrid Search & Reranking**:
+   - **BM25 Results**: Sparse search retrieves top chunks based on exact keyword matching
+   - **FAISS Results**: Dense search retrieves top chunks based on semantic similarity
+   - Both result sets are combined and deduplicated
+   - **Cross-Encoder Reranking**: The merged results are re-scored using the `cross-encoder/ms-macro-MiniLM-L-6-v2` model, which evaluates each query-document pair to identify the most relevant context
+
+2. **Contextual Prompting (Top-K)**: The top-K most relevant document chunks (default: 2) are injected into the LLM prompt to ensure accurate, context-grounded responses
+
+3. **Local LLM (Ollama) - LLM Answer Synthesis**: A local LLM running via Ollama (`deepseek-r1:1.5b`) generates a natural language response based strictly on the retrieved document context
+
+4. **AI Answer Synthesis**: The final AI answer is synthesized and returned to the user along with the context used for transparency
 
 ## Tech Stack
 
@@ -215,6 +227,15 @@ curl -X GET "http://localhost:8000/list/documents"
 ```bash
 curl -X POST "http://localhost:8000/rag/search" -H "Content-Type: application/json" -d "{\"query\": \"What is the main topic?\"}"
 ```
+
+## Search Strategy Comparison
+
+| Search Method | Best For | How It Works |
+|--------------|----------|--------------|
+| **Sparse Search (BM25)** | Exact keyword matching and literal terminology | Uses tokenization and term frequency-inverse document frequency (TF-IDF) to find documents containing the exact query terms |
+| **Dense Search (FAISS)** | Finding conceptual matches even without shared keywords | Converts text to vector embeddings and finds semantically similar documents using cosine similarity in vector space |
+
+The hybrid approach combines both methods to capture both exact matches and semantic relationships, ensuring comprehensive retrieval.
 
 ## Configuration
 
